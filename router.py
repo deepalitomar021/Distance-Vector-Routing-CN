@@ -120,7 +120,9 @@ def init_routing_table():
 
 def refresh_direct_subnets():
 	now = time.time()
-	for subnet in get_local_subnets():
+	current_direct_subnets = set(get_local_subnets())
+	# Add new direct subnets
+	for subnet in current_direct_subnets:
 		current = routing_table.get(subnet)
 		if current is None or not current.get("is_direct"):
 			routing_table[subnet] = {
@@ -129,6 +131,20 @@ def refresh_direct_subnets():
 				"updated_at": now,
 				"is_direct": True,
 			}
+	# Remove vanished direct subnets
+	vanished = []
+	for subnet, info in list(routing_table.items()):
+		if info.get("is_direct") and subnet not in current_direct_subnets:
+			vanished.append(subnet)
+	changed = False
+	for subnet in vanished:
+		del routing_table[subnet]
+		# Delete kernel route
+		os.system(f"ip route del {subnet}")
+		print(f"[LOST] Direct subnet {subnet} removed (link down)")
+		changed = True
+	if changed:
+		trigger_event.set()
 
 
 def build_routes_for_neighbor(neighbor_ip):
